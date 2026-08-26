@@ -13,6 +13,12 @@ function RoomCodeInput({ value, onChange }) {
   const refs  = useRef([]);
   const chars = Array.from({ length: SLOTS }, (_, i) => value.toUpperCase()[i] || "");
 
+  const handleChange = (e, i) => {
+    const nextChar = e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(-1);
+    onChange(chars.map((c, idx) => (idx === i ? nextChar : c)).join(""));
+    if (nextChar && i < SLOTS - 1) refs.current[i + 1]?.focus();
+  };
+
   const handleKey = (e, i) => {
     if (e.key === "Backspace") {
       e.preventDefault();
@@ -50,7 +56,7 @@ function RoomCodeInput({ value, onChange }) {
           aria-label={`Room code character ${i + 1}`}
           onKeyDown={(e) => handleKey(e, i)}
           onPaste={handlePaste}
-          onChange={() => {}}
+          onChange={(e) => handleChange(e, i)}
           onFocus={(e) => e.target.select()}
           className={`
             w-10 h-12 sm:w-12 sm:h-14 rounded-xl border-[1.5px] bg-[#0f1720]
