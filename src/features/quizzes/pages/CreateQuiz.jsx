@@ -12,7 +12,10 @@ import {
   FileText,
   AlertTriangle,
   CheckCircle2,
-  Loader2
+  Loader2,
+  FileSpreadsheet,
+  Download,
+  FileCode
 } from "lucide-react";
 import { useToast } from "../../../components/ui/ToastContext";
 import { useNavigate } from "react-router-dom";
@@ -419,6 +422,10 @@ export default function CreateQuiz() {
     }
   };
 
+  const [importStatus, setImportStatus] = useState("");
+  const [importError, setImportError] = useState("");
+  const [showImport, setShowImport] = useState(false);
+
   const clearAITool = () => {
     setAiMode("document");
     setAiFile(null);
@@ -428,6 +435,113 @@ export default function CreateQuiz() {
     setAiStatus("");
     setAiError("");
     setAiDescription("");
+  };
+
+  const downloadCSVTemplate = () => {
+    const csvContent = `question,option_a,option_b,option_c,option_d,correct_answer,time_limit\n"What is the capital of Sierra Leone?","Bo","Kenema","Freetown","Makeni","Freetown",15\n"Which protocol is used for real-time web communication?","HTTP/1.0","WebSockets","FTP","SMTP","WebSockets",15\n"What is 15 multiplied by 4?","50","60","65","70","60",20`;
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "kuizroom_questions_template.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+    addToast("Downloaded CSV question template", { type: "success" });
+  };
+
+  const handleBulkFileImport = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImportError("");
+    setImportStatus("");
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result;
+      if (typeof content !== "string") return;
+
+      try {
+        if (file.name.endsWith(".json") || content.trim().startsWith("[")) {
+          // Parse JSON
+          const parsed = JSON.parse(content);
+          if (!Array.isArray(parsed) || !parsed.length) {
+            throw new Error("JSON file must contain an array of question objects.");
+          }
+
+          const imported = parsed.map((item) => {
+            const options = item.options?.slice(0, 4) || [
+              item.option_a || "",
+              item.option_b || "",
+              item.option_c || "",
+              item.option_d || ""
+            ];
+            while (options.length < 4) options.push("");
+            const correct =
+              typeof item.correctAnswer === "number"
+                ? options[item.correctAnswer]
+                : item.correctAnswer || item.correct_answer || options[0] || "";
+
+            return {
+              question: item.question || item.text || "",
+              options,
+              correctAnswer: correct,
+              timeLimit: Number(item.timeLimit || item.time_limit || 15)
+            };
+          });
+
+          setQuestions((prev) => [...prev.filter((q) => q.question.trim()), ...imported]);
+          setImportStatus(`Successfully imported ${imported.length} questions from JSON.`);
+          addToast(`Imported ${imported.length} questions!`, { type: "success" });
+        } else {
+          // Parse CSV
+          const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0);
+          if (lines.length < 2) {
+            throw new Error("CSV file must have a header row and at least one question row.");
+          }
+
+          const imported = [];
+          // Skip header row if it contains 'question'
+          const startIdx = lines[0].toLowerCase().includes("question") ? 1 : 0;
+
+          for (let i = startIdx; i < lines.length; i++) {
+            const line = lines[i];
+            // Match comma-separated values taking into account quotes
+            const regex = /(?:^|,)(?:"([^"]*(?:""[^"]*)*)"|([^",]*))/g;
+            const values = [];
+            let match;
+            while ((match = regex.exec(line)) !== null) {
+              let val = match[1] !== undefined ? match[1].replace(/""/g, '"') : match[2];
+              values.push(val.trim());
+            }
+
+            if (values.length >= 6) {
+              const [qText, opA, opB, opC, opD, correct, timeLimit] = values;
+              imported.push({
+                question: qText || "",
+                options: [opA || "", opB || "", opC || "", opD || ""],
+                correctAnswer: correct || opA || "",
+                timeLimit: Number(timeLimit) || 15
+              });
+            }
+          }
+
+          if (!imported.length) {
+            throw new Error("Could not parse any valid questions. Ensure your CSV columns follow: question,option_a,option_b,option_c,option_d,correct_answer,time_limit");
+          }
+
+          setQuestions((prev) => [...prev.filter((q) => q.question.trim()), ...imported]);
+          setImportStatus(`Successfully imported ${imported.length} questions from CSV.`);
+          addToast(`Imported ${imported.length} questions!`, { type: "success" });
+        }
+      } catch (err) {
+        setImportError(err.message || "Failed to parse question file.");
+        addToast(err.message || "Failed to parse question file.", { type: "error" });
+      }
+    };
+
+    reader.readAsText(file);
+    e.target.value = "";
   };
 
   const inputClass = useCallback(
@@ -659,6 +773,88 @@ export default function CreateQuiz() {
                   AI Description
                 </p>
                 <p>{aiDescription}</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+
+        {/* Bulk Import Section (CSV / JSON) */}
+        <motion.div
+          variants={fadeUp}
+          className="bg-[#0d131c]/80 border border-slate-800 rounded-2xl p-6 mb-5"
+        >
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
+                <FileSpreadsheet size={16} className="text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-200">Bulk Import Questions (CSV / JSON)</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Upload formatted CSV or JSON files to load multiple questions at once
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowImport(!showImport)}
+              className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300 hover:border-emerald-500 hover:text-emerald-300 transition"
+            >
+              {showImport ? "Collapse" : "Expand Import"}
+            </button>
+          </div>
+
+          <AnimatePresence>
+            {showImport && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="pt-2"
+              >
+                <div className="grid gap-4 sm:grid-cols-2 mb-4">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-400 mb-1.5 flex items-center gap-1.5">
+                      <Upload size={12} />
+                      Choose CSV or JSON File
+                    </label>
+                    <input
+                      type="file"
+                      accept=".csv,.json"
+                      onChange={handleBulkFileImport}
+                      className={inputClass(false)}
+                    />
+                  </div>
+
+                  <div className="flex flex-col justify-end">
+                    <button
+                      type="button"
+                      onClick={downloadCSVTemplate}
+                      className="rounded-2xl border border-slate-700 hover:border-emerald-500/50 bg-slate-900/60 px-4 py-3 text-xs font-semibold text-slate-300 hover:text-emerald-300 transition flex items-center justify-center gap-2"
+                    >
+                      <Download size={14} className="text-emerald-400" />
+                      Download Sample CSV Template
+                    </button>
+                  </div>
+                </div>
+
+                {importStatus && (
+                  <div className="mb-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-2.5 text-xs text-emerald-300 flex items-center gap-2">
+                    <CheckCircle2 size={14} className="text-emerald-400" />
+                    {importStatus}
+                  </div>
+                )}
+
+                {importError && (
+                  <div className="mb-3 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-2.5 text-xs text-red-300 flex items-center gap-2">
+                    <AlertTriangle size={14} className="text-red-400" />
+                    {importError}
+                  </div>
+                )}
+
+                <p className="text-[11px] text-slate-500">
+                  Supported CSV headers: <code className="text-slate-400">question, option_a, option_b, option_c, option_d, correct_answer, time_limit</code>
+                </p>
               </motion.div>
             )}
           </AnimatePresence>

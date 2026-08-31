@@ -1,12 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Lock, UserCircle } from "lucide-react";
+import { ArrowLeft, Lock, UserCircle, Trophy, Award, Gamepad2, Layers, Flame, Calendar, Clock, ChevronRight } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../components/ui/ToastContext";
+import { apiUrl } from "../../../config/api";
 
 export default function Profile() {
   const navigate = useNavigate();
-  const { user, updateProfile, changePassword } = useAuth();
+  const { user, updateProfile, changePassword, token } = useAuth();
   const { addToast } = useToast();
 
   const [username, setUsername] = useState(user?.username || "");
@@ -15,11 +16,39 @@ export default function Profile() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [profileLoading, setProfileLoading] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
+  const [stats, setStats] = useState({
+    gamesPlayed: 0,
+    quizzesCreated: 0,
+    wins: 0,
+    podiums: 0,
+    totalPoints: 0,
+    avgScore: 0,
+    history: []
+  });
+  const [statsLoading, setStatsLoading] = useState(true);
 
   const initials = useMemo(() => {
     if (!user?.username) return "U";
     return user.username.charAt(0).toUpperCase();
   }, [user]);
+
+  useEffect(() => {
+    if (!token) return;
+    setStatsLoading(true);
+    fetch(apiUrl("/api/auth/stats"), {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.success && json.data) {
+          setStats(json.data);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to fetch user stats:", err);
+      })
+      .finally(() => setStatsLoading(false));
+  }, [token]);
 
   const handleProfileSave = async (event) => {
     event.preventDefault();
@@ -81,6 +110,45 @@ export default function Profile() {
           <ArrowLeft size={16} />
           Back
         </button>
+
+        {/* User Stats Overview Cards */}
+        <section className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+              <Gamepad2 size={15} className="text-blue-400" />
+              Games Played
+            </div>
+            <p className="text-2xl font-black text-white">{stats.gamesPlayed}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">Multiplayer sessions</p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+              <Trophy size={15} className="text-amber-400" />
+              Victories
+            </div>
+            <p className="text-2xl font-black text-amber-400">{stats.wins}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">1st place finishes</p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+              <Layers size={15} className="text-violet-400" />
+              Quizzes Created
+            </div>
+            <p className="text-2xl font-black text-violet-400">{stats.quizzesCreated}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">Custom question sets</p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+              <Award size={15} className="text-emerald-400" />
+              Avg Score
+            </div>
+            <p className="text-2xl font-black text-emerald-400">{stats.avgScore}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">Points per match</p>
+          </div>
+        </section>
 
         <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
           <section className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-black/30">
@@ -162,9 +230,51 @@ export default function Profile() {
                 </button>
               </form>
             </section>
-
           </div>
         </div>
+
+        {/* Game History Panel */}
+        <section className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-black/30">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Gamepad2 size={20} className="text-indigo-400" />
+              <h2 className="text-xl font-semibold">Recent Game History</h2>
+            </div>
+            {statsLoading && <span className="text-xs text-slate-500">Loading history...</span>}
+          </div>
+
+          {stats.history && stats.history.length > 0 ? (
+            <div className="space-y-2.5">
+              {stats.history.map((game, idx) => (
+                <div
+                  key={game.id || idx}
+                  className="flex items-center justify-between rounded-2xl border border-slate-800/80 bg-slate-950/60 p-4 transition hover:border-slate-700"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-800/80 font-bold text-slate-300 text-sm">
+                      #{game.rank}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-white text-sm">{game.roomName}</p>
+                      <p className="text-xs text-slate-500">Room Code: {game.roomCode}</p>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <p className="text-base font-black text-emerald-400">{game.score} pts</p>
+                    <p className="text-[10px] text-slate-500">
+                      {game.playedAt ? new Date(game.playedAt).toLocaleDateString() : "Recent"}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="py-8 text-center text-slate-500 text-sm">
+              No game history found yet. Join a room to start tracking your performance!
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );
